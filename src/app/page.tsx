@@ -1,103 +1,223 @@
-import Image from "next/image";
+/* eslint-disable @typescript-eslint/no-explicit-any */
+"use client";
 
-export default function Home() {
+import { useEffect, useState } from "react";
+import { loadStripe, Stripe } from "@stripe/stripe-js";
+import {
+  Elements,
+  useStripe,
+  useElements,
+  CardElement,
+} from "@stripe/react-stripe-js";
+import toast, { Toaster } from "react-hot-toast";
+
+let stripePromise: Promise<Stripe | null>;
+
+function getStripePromise(pk: string) {
+  if (!stripePromise || pk !== (window as any).__lastStripePK) {
+    stripePromise = loadStripe(pk);
+    (window as any).__lastStripePK = pk;
+  }
+  return stripePromise;
+}
+
+export default function PaymentPage() {
+  const [stripePK, setStripePK] = useState("");
+  const [token, setToken] = useState("");
+  const [jsonPayload, setJsonPayload] = useState("");
+  const [baseUrl, setBaseUrl] = useState("");
+  const [clientSecret, setClientSecret] = useState<string | null>(null);
+  const [status, setStatus] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  // Load persisted values
+  useEffect(() => {
+    const savedPK = localStorage.getItem("stripe-pk") || "";
+    const savedToken = localStorage.getItem("stripe-token") || "";
+    const savedPayload = localStorage.getItem("stripe-json-payload") || "";
+    const savedBaseUrl = localStorage.getItem("stripe-base-url") || "";
+
+    setStripePK(savedPK);
+    setToken(savedToken);
+    setJsonPayload(savedPayload);
+    setBaseUrl(savedBaseUrl);
+  }, []);
+
+  const handleCreatePaymentIntent = async () => {
+    setLoading(true);
+    setStatus("");
+    try {
+      const res = await fetch(`${baseUrl}`, {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          Authorization: `Bearer ${token}`,
+        },
+        body: jsonPayload,
+      });
+
+      const data = await res.json();
+      if (!res.ok) {
+        throw new Error(data.message || "Server Error");
+      }
+
+      const paymentIntent = data.data?.paymentIntent;
+      if (!paymentIntent) throw new Error("No payment intent returned");
+      setClientSecret(paymentIntent);
+      toast.success("Payment Intent Created");
+    } catch (err: any) {
+      toast.error("Failed: " + err.message);
+      setClientSecret(null);
+    } finally {
+      setLoading(false);
+    }
+  };
+
   return (
-    <div className="font-sans grid grid-rows-[20px_1fr_20px] items-center justify-items-center min-h-screen p-8 pb-20 gap-16 sm:p-20">
-      <main className="flex flex-col gap-[32px] row-start-2 items-center sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={180}
-          height={38}
-          priority
-        />
-        <ol className="font-mono list-inside list-decimal text-sm/6 text-center sm:text-left">
-          <li className="mb-2 tracking-[-.01em]">
-            Get started by editing{" "}
-            <code className="bg-black/[.05] dark:bg-white/[.06] font-mono font-semibold px-1 py-0.5 rounded">
-              src/app/page.tsx
-            </code>
-            .
-          </li>
-          <li className="tracking-[-.01em]">
-            Save and see your changes instantly.
-          </li>
-        </ol>
+    <div className="min-h-screen bg-gray-50 py-10 px-4">
+      <Toaster position="top-right" />
+      <div className="max-w-xl mx-auto bg-white shadow-md rounded-xl p-6">
+        <h1 className="text-2xl font-bold text-gray-800 mb-6">
+          Stripe Payment
+        </h1>
 
-        <div className="flex gap-4 items-center flex-col sm:flex-row">
-          <a
-            className="rounded-full border border-solid border-transparent transition-colors flex items-center justify-center bg-foreground text-background gap-2 hover:bg-[#383838] dark:hover:bg-[#ccc] font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 sm:w-auto"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={20}
-              height={20}
-            />
-            Deploy now
-          </a>
-          <a
-            className="rounded-full border border-solid border-black/[.08] dark:border-white/[.145] transition-colors flex items-center justify-center hover:bg-[#f2f2f2] dark:hover:bg-[#1a1a1a] hover:border-transparent font-medium text-sm sm:text-base h-10 sm:h-12 px-4 sm:px-5 w-full sm:w-auto md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Read our docs
-          </a>
-        </div>
-      </main>
-      <footer className="row-start-3 flex gap-[24px] flex-wrap items-center justify-center">
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
+        {/* Stripe PK */}
+        <label className="block text-sm font-medium text-gray-700">
+          Stripe Public Key
+        </label>
+        <input
+          type="text"
+          placeholder="pk_test_..."
+          value={stripePK}
+          onChange={(e) => {
+            const val = e.target.value;
+            setStripePK(val);
+            localStorage.setItem("stripe-pk", val);
+          }}
+          className="w-full border rounded-md px-3 py-2 mb-4 mt-1"
+        />
+
+        {/* Token */}
+        <label className="block text-sm font-medium text-gray-700">
+          Auth Token
+        </label>
+        <input
+          type="text"
+          placeholder="Bearer token"
+          value={token}
+          onChange={(e) => {
+            const val = e.target.value;
+            setToken(val);
+            localStorage.setItem("stripe-token", val);
+          }}
+          className="w-full border rounded-md px-3 py-2 mb-4 mt-1"
+        />
+
+        {/* Base API URL */}
+        <label className="block text-sm font-medium text-gray-700">
+          API URL
+        </label>
+        <input
+          type="text"
+          placeholder="https://your-api.com"
+          value={baseUrl}
+          onChange={(e) => {
+            const val = e.target.value;
+            setBaseUrl(val);
+            localStorage.setItem("stripe-base-url", val);
+          }}
+          className="w-full border rounded-md px-3 py-2 mb-4 mt-1"
+        />
+
+        {/* JSON Payload */}
+        <label className="block text-sm font-medium text-gray-700">
+          JSON Payload
+        </label>
+        <textarea
+          className="w-full border rounded-md px-3 py-2 h-24 font-mono text-sm"
+          placeholder='{"bidId":"..."}'
+          value={jsonPayload}
+          onChange={(e) => {
+            const val = e.target.value;
+            setJsonPayload(val);
+            localStorage.setItem("stripe-json-payload", val);
+          }}
+        />
+
+        <button
+          onClick={handleCreatePaymentIntent}
+          className="w-full mt-4 bg-blue-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-blue-700 transition disabled:opacity-50"
+          disabled={!stripePK || !token || !jsonPayload || !baseUrl || loading}
         >
-          <Image
-            aria-hidden
-            src="/file.svg"
-            alt="File icon"
-            width={16}
-            height={16}
-          />
-          Learn
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/window.svg"
-            alt="Window icon"
-            width={16}
-            height={16}
-          />
-          Examples
-        </a>
-        <a
-          className="flex items-center gap-2 hover:underline hover:underline-offset-4"
-          href="https://nextjs.org?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          <Image
-            aria-hidden
-            src="/globe.svg"
-            alt="Globe icon"
-            width={16}
-            height={16}
-          />
-          Go to nextjs.org →
-        </a>
-      </footer>
+          {loading ? "Creating Payment..." : "Pay Now"}
+        </button>
+
+        {/* Stripe Checkout Form */}
+        {clientSecret && stripePK && (
+          <div className="mt-8">
+            <Elements stripe={getStripePromise(stripePK)}>
+              <CheckoutForm
+                clientSecret={clientSecret}
+                onSuccess={() => setClientSecret(null)}
+              />
+            </Elements>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function CheckoutForm({
+  clientSecret,
+  onSuccess,
+}: {
+  clientSecret: string;
+  onSuccess: () => void;
+}) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [paying, setPaying] = useState(false);
+
+  const handleSubmit = async () => {
+    if (!stripe || !elements) return;
+    setPaying(true);
+
+    const result = await stripe.confirmCardPayment(clientSecret, {
+      payment_method: {
+        card: elements.getElement(CardElement)!,
+      },
+    });
+
+    if (result.error) {
+      toast.error("Payment failed: " + result.error.message);
+    } else if (result.paymentIntent?.status === "succeeded") {
+      toast.success("Payment succeeded!");
+      onSuccess();
+    } else if (result.paymentIntent?.status === "requires_capture") {
+      toast.success("Payment succeeded! Need manual capture");
+      onSuccess();
+    }
+    console.log(result.paymentIntent?.status);
+    setPaying(false);
+  };
+
+  return (
+    <div className="mt-6">
+      <label className="block text-sm font-medium text-gray-700 mb-1">
+        Card Details
+      </label>
+      <div className="border border-gray-300 rounded-md p-3 mb-4 bg-white">
+        <CardElement className="text-sm" />
+      </div>
+
+      <button
+        onClick={handleSubmit}
+        className="w-full bg-green-600 text-white font-semibold py-2 px-4 rounded-md hover:bg-green-700 transition disabled:opacity-50"
+        disabled={paying}
+      >
+        {paying ? "Processing..." : "Submit Payment"}
+      </button>
     </div>
   );
 }
